@@ -1,0 +1,81 @@
+UNAME := $(shell uname)
+
+ifeq ($(UNAME), Darwin)
+SHAREDFLAGS = -dynamiclib
+SHAREDEXT = dylib
+else
+SHAREDFLAGS = -shared
+SHAREDEXT = so
+endif
+
+LIB_SRC=mpchash.c
+LIB_HDR=mpchash.h
+LIB_OBJ=$(LIB_SRC:.c=.o)
+SO_OBJS=mpchash.o
+SO_NAME=libmpchash.$(SHAREDEXT)
+ifneq ($(UNAME), Darwin)
+    SHAREDFLAGS += -Wl,-soname,$(SO_NAME)
+endif
+
+A_NAME=libmpchash.a
+
+INCLUDES=-I.
+TEST_SRC=mpchash-test.c
+TEST_OBJ=mpchash-test.o
+TEST_EXE=mpchash-test
+
+CFLAGS += -Werror -Wall -Wextra
+LDFLAGS += -L. -lmpchash
+CC=gcc
+
+ifeq ("$(PREFIX)", "")
+PREFIX=/usr/local
+endif
+
+ifeq ("$(LIBDIR)", "")
+LIBDIR=$(PREFIX)/lib
+endif
+
+ifeq ("$(INCDIR)", "")
+INCDIR=$(PREFIX)/include
+endif
+
+default: library
+
+.c.o:
+	$(CC) -c -fPIC $(CFLAGS) $< -o $@
+
+$(SO_NAME): $(LIB_OBJ)
+	$(CC) $(SHAREDFLAGS) -o $(SO_NAME).1.0 $(SO_OBJS)
+	ln -sf ./$(SO_NAME).1.0 ./$(SO_NAME).1
+	ln -sf ./$(SO_NAME).1.0 ./$(SO_NAME)
+
+$(A_NAME): $(LIB_OBJ)
+	ar -r $(A_NAME) $(SO_OBJS)
+
+library: $(SO_NAME) $(A_NAME)
+
+$(TEST_EXE): library
+	$(CC) -c $(INCLUDES) $(CFLAGS) $(TEST_SRC) -o $(TEST_OBJ)
+	$(CC) $(TEST_OBJ) $(A_NAME) -o $(TEST_EXE)-static
+	$(CC) $(TEST_OBJ) $(LDFLAGS) -o $(TEST_EXE)-dynamic
+
+check: $(TEST_EXE)
+	./$(TEST_EXE)-static
+	LD_LIBRARY_PATH=. ./$(TEST_EXE)-dynamic
+
+valgrind: $(TEST_EXE)
+	valgrind ./$(TEST_EXE)-static
+
+clean:
+	rm -f *.o *.a *.$(SHAREDEXT)  $(SO_NAME).* \
+		$(TEST_EXE)-static $(TEST_EXE)-dynamic
+
+install: library
+	 @echo "Installing libraries in $(LIBDIR)"; \
+	 mkdir -pv $(LIBDIR)/;\
+	 cp -pv $(A_NAME) $(LIBDIR)/;\
+	 cp -Rv $(SO_NAME)* $(LIBDIR)/;\
+	 echo "Installing headers in $(INCDIR)"; \
+	 mkdir -pv $(INCDIR)/;\
+	 cp -pv $(LIB_HDR) $(INCDIR)/;
